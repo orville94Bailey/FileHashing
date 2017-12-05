@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading;
+using System.Diagnostics;
 using System.Threading.Tasks;
 
 namespace CommandLineParsingTesting
@@ -13,8 +14,10 @@ namespace CommandLineParsingTesting
     {
         static void Main(string[] args)
         {
+            var stopwatch = new Stopwatch();
             var parameters = ArgumentParser.ParseArguments(args);
-
+            const int numOfThreads = 4;
+            stopwatch.Start();
             try
             {
                 var fileList = Directory.GetFiles(parameters.DirectoryPath).ToList();
@@ -24,26 +27,51 @@ namespace CommandLineParsingTesting
                  * thread runs the hashing algorithm
                  */
 
-                var listToProcess = fileList.SplitList(4);
+                var listToProcess = fileList.SplitList(numOfThreads);
+                var sharedStateObj = new SharedStateObject() { Arguments = parameters };
 
-                ThreadPool.QueueUserWorkItem(new WaitCallback(), );
+                var threadList = new List<Thread>();
 
-                using (FileStream fs = File.Open(listToProcess.ElementAt(0).ElementAt(0), FileMode.Open, FileAccess.Read))
-                using (BufferedStream bs = new BufferedStream(fs))
-                using (StreamReader sr = new StreamReader(bs))
+                var errorFile = new StreamWriter("error.txt", true);
+                var outputFile = new StreamWriter("output.txt", true);
+
+                foreach (var item in listToProcess)
                 {
-                    string line;
-                    while ((line = sr.ReadLine()) != null)
-                    {
-
-                    }
+                    threadList.Add(new Thread(() => FileProcessor.ProcessFiles(sharedStateObj, item, outputFile, errorFile)));
                 }
+                
+
+                foreach (var thread in threadList)
+                {
+                    thread.Start();
+                }
+
+                var stillRunning = false;
+                do
+                {
+                    Thread.Sleep(5000);
+                    stillRunning = false;
+                    foreach (var thread in threadList)
+                    {
+                        if(thread.IsAlive)
+                        {
+                            stillRunning = true;
+                        }
+                    }
+                } while (stillRunning);
+
+                errorFile.Flush();
+                errorFile.Close();
+                outputFile.Flush();
+                outputFile.Close();
             }
             catch (Exception e)
             {
                 throw;
             }
 
+            stopwatch.Stop();
+            Console.WriteLine("Hashing finished in {0} seconds.", ((TimeSpan)stopwatch.Elapsed).Seconds);
             Console.Read();
         }
     }
